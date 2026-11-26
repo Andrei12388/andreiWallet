@@ -53,6 +53,23 @@ function App() {
   const [reportYear, setReportYear] = useState(currentYear)
   const [selectedMonth, setSelectedMonth] = useState(monthKey(new Date()))
   const [selectedWeekStart, setSelectedWeekStart] = useState(dateKey(weekStart(new Date())))
+  const [isAuthenticated, setIsAuthenticated] = useState(() => window.sessionStorage.getItem('andreiWalletAuthenticated') === 'true')
+  const [loginError, setLoginError] = useState('')
+
+  const login = (username: string, password: string) => {
+    if (username === 'andrei12388' && password === 'andrei2026') {
+      window.sessionStorage.setItem('andreiWalletAuthenticated', 'true')
+      setLoginError('')
+      setIsAuthenticated(true)
+      return
+    }
+    setLoginError('Incorrect username or password.')
+  }
+
+  const logout = () => {
+    window.sessionStorage.removeItem('andreiWalletAuthenticated')
+    setIsAuthenticated(false)
+  }
 
   const notify = (type: Notice['type'], message: string) => { setNotice({ type, message }); window.setTimeout(() => setNotice(null), 3500) }
   const reloadTransactions = async () => setTransactions(withCategoryNames(await getTransactions(), categories))
@@ -111,6 +128,7 @@ function App() {
 
   const reportYears = Array.from(new Set([currentYear, ...transactions.map((transaction) => Number(transaction.date.slice(0, 4)))] )).sort((first, second) => second - first)
   const navItems: { view: View; icon: string }[] = [{ view: 'Overview', icon: '⌂' }, { view: 'Ledger', icon: '≡' }, { view: 'Income', icon: '↗' }, { view: 'Expenses', icon: '↘' }, { view: 'Reports', icon: '▥' }, { view: 'Allocation', icon: '◈' }, { view: 'Categories', icon: '⚙' }]
+  if (!isAuthenticated) return <LoginView onLogin={login} error={loginError} />
   return <div className="app-shell">
     <aside className="sidebar"><div className="brand">
     <img height={55} width={55} src="/andreiIcon.png" alt="andreiWallet Logo" /><span>Andrei<span className="brand-accent">Wallet</span></span></div><div className="workspace-label">WORKSPACE</div><nav>{navItems.slice(0, 5).map((item) => <NavButton key={item.view} item={item} activeView={activeView} setActiveView={setActiveView} />)}</nav><div className="workspace-label settings-label">MANAGE</div><nav>{navItems.slice(5).map((item) => <NavButton key={item.view} item={item} activeView={activeView} setActiveView={setActiveView} />)}</nav><div className="sidebar-footer"><div className="sync-dot" /><div><strong>{loading ? 'Syncing...' : 'Google Sheets'}</strong>
@@ -122,7 +140,7 @@ function App() {
     <small>© Robert Andrei Bardoquillo</small>
     </div>
     </aside>
-    <main className="main-content"><header className="topbar"><div><span className="eyebrow">{activeView === 'Overview' ? monthName(selectedMonth).toUpperCase() : 'SEPTEMBER 2026'}</span><h1>{activeView === 'Overview' ? 'Good Day, Andrei.' : activeView}</h1></div><div className="header-actions"><button className="icon-button" aria-label="Notifications">♧</button><button className="avatar">AW</button></div></header>
+    <main className="main-content"><header className="topbar"><div><span className="eyebrow">{activeView === 'Overview' ? monthName(selectedMonth).toUpperCase() : 'SEPTEMBER 2026'}</span><h1>{activeView === 'Overview' ? 'Good Day, Andrei.' : activeView}</h1></div><div className="header-actions"><button className="icon-button" aria-label="Notifications">♧</button><button className="avatar" title="Signed in as andrei12388">AW</button><button className="logout-button" onClick={logout}>Log out</button></div></header>
       {activeView === 'Categories' ? <CategoriesView categories={categories} onChanged={async (message) => { await reloadCategories(); notify('success', message) }} onError={(message) => notify('error', message)} /> : activeView === 'Allocation' ? <AllocationView allocations={allocations} income={income} onSaved={(next) => { setAllocations(next); notify('success', 'Allocations saved.') }} onError={(message) => notify('error', message)} /> : activeView === 'Reports' ? <MonthlySummary transactions={transactions} years={reportYears} year={reportYear} setYear={setReportYear} /> : <>
         <div className="page-toolbar"><div><p className="page-kicker">FINANCIAL SNAPSHOT</p><p className="muted">{loading ? 'Loading your Google Sheets ledger...' : activeView === 'Overview' ? `Showing ${selectedWeek.label}.` : 'Keep your giving and spending in clear view.'}</p></div><div className="toolbar-actions">{activeView === 'Overview' && <div className="overview-period"><label>Month<select value={selectedMonth} onChange={(event) => { const nextMonth = event.target.value; setSelectedMonth(nextMonth); setSelectedWeekStart(weekOptions(nextMonth)[0]?.start || `${nextMonth}-01`) }}>{monthOptions.map((option) => <option key={option} value={option}>{monthName(option)}</option>)}</select></label><label>Week<select value={selectedWeek.start} onChange={(event) => setSelectedWeekStart(event.target.value)}>{overviewWeeks.map((week) => <option key={week.start} value={week.start}>{week.label}</option>)}</select></label></div>}<button className="primary-button" onClick={openNew}><span>+</span> New transaction</button></div></div>
         {activeView === 'Overview' && <>
@@ -202,5 +220,31 @@ function ReportChart({ className, title, subtitle, data, month, onMonthChange, e
 }
 
 function AllocationView({ allocations, income, onSaved, onError }: { allocations: Allocation[]; income: number; onSaved: (allocations: Allocation[]) => void; onError: (message: string) => void }) { const [values, setValues] = useState(allocations); const [saving, setSaving] = useState(false); useEffect(() => setValues(allocations), [allocations]); const total = values.reduce((sum, item) => sum + Number(item.percentage || 0), 0); const save = async () => { if (Math.abs(total - 100) > .001) { onError('Allocations must total 100%.'); return } setSaving(true); try { const next = await saveAllocations('INC-001', values.map((item) => ({ fundName: item.fundName.trim(), percentage: Number(item.percentage) }))); onSaved(next) } catch (error: unknown) { onError(error instanceof Error ? error.message : 'Could not save allocations.') } finally { setSaving(false) } }; const add = () => setValues([...values, { id: `ALLOC-NEW-${Date.now()}`, incomeCategoryId: 'INC-001', fundName: 'New fund', percentage: 0, active: true }]); const remove = (id: string) => setValues(values.filter((item) => item.id !== id)); return <div className="allocation-page"><div className="page-toolbar"><div><p className="page-kicker">RULES & DISTRIBUTION</p><p className="muted">New income is automatically split across your funds.</p></div><div className="allocation-actions"><button className="text-button" onClick={add} disabled={saving}>+ Add fund</button><button className="primary-button" onClick={save} disabled={saving || Math.abs(total - 100) > .001}>{saving ? 'Saving...' : 'Save changes'}</button></div></div><div className="panel allocation-settings"><div><span className="eyebrow">INCOME CATEGORY</span><h2>Overall Allocations</h2><p className="muted">Every new allocations follows this allocation.</p></div><div className={`settings-total ${Math.abs(total - 100) > .001 ? 'invalid' : ''}`}><strong>{total}%</strong><span>{total === 100 ? 'Ready to save' : 'Must equal 100%'}</span></div></div><div className="allocation-editor panel">{values.map((item, index) => <div className="editor-row" key={item.id}><div className="editor-name"><i className={`dot ${['teal', 'blue', 'coral', 'gold'][index % 4]}`} /><div><input className="fund-name-input" value={item.fundName} disabled={saving} onChange={(event) => setValues(values.map((current, currentIndex) => currentIndex === index ? { ...current, fundName: event.target.value } : current))} /><small>{formatCurrency(income * Number(item.percentage) / 100)} projected</small></div></div><div className="percentage-input"><input type="number" value={item.percentage} min="0" max="100" disabled={saving} onChange={(event) => setValues(values.map((current, currentIndex) => currentIndex === index ? { ...current, percentage: Number(event.target.value) } : current))} /><span>%</span><button className="remove-allocation" type="button" onClick={() => remove(item.id)} disabled={saving} aria-label={`Delete ${item.fundName}`}>×</button></div></div>)}</div></div> }
+
+function LoginView({ onLogin, error }: { onLogin: (username: string, password: string) => void; error: string }) {
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    onLogin(username.trim(), password)
+  }
+
+  return <main className="login-page">
+    <div className="login-card">
+      <div className="login-brand">
+        <img height={64} width={64} src="/andreiIcon.png" alt="AndreiWallet logo" />
+        <div><strong>Andrei<span>Wallet</span></strong><small>Personal financial workspace</small></div>
+      </div>
+      <div className="login-heading"><span className="eyebrow">WELCOME BACK</span><h1>Sign in to your wallet</h1><p>Enter your account details to continue.</p></div>
+      <form className="login-form" onSubmit={submit}>
+        <label>Username<input type="text" value={username} onChange={(event) => setUsername(event.target.value)} placeholder="Enter username" autoComplete="username" required /></label>
+        <label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Enter password" autoComplete="current-password" required /></label>
+        {error && <div className="login-error" role="alert">{error}</div>}
+        <button className="primary-button login-submit" type="submit">Sign in</button>
+      </form>
+    </div>
+  </main>
+}
 
 export default App
